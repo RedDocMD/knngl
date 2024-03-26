@@ -170,9 +170,9 @@ int GlContext::glInit() {
     fprintf(stderr, "failed to make egl context current\n");
     return 1;
   }
-  printf("OpenGL Version: %s\n", glGetString(GL_VERSION));
-  printf("OpenGL Vendor: %s\n", glGetString(GL_VENDOR));
-  printf("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
+  // printf("OpenGL Version: %s\n", glGetString(GL_VERSION));
+  // printf("OpenGL Vendor: %s\n", glGetString(GL_VENDOR));
+  // printf("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
 
   glewExperimental = GL_TRUE;
   glewInit();

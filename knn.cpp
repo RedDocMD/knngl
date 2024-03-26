@@ -2,6 +2,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <stdexcept>
@@ -80,12 +81,13 @@ vec2 split(in double a) {
 }
 
 void main() {
-	ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+        uint qidx = gl_GlobalInvocationID.x;
+        uint didx = gl_GlobalInvocationID.y;
 	int dim = imageSize(data).x;
 	double sum = 0;
 	for (int i = 0; i < dim; i++) {
-		vec2 qv = imageLoad(queries, ivec2(i, coord.x)).xy;
-		vec2 dv = imageLoad(data, ivec2(i, coord.y)).xy;
+		vec2 qv = imageLoad(queries, ivec2(i, qidx)).xy;
+		vec2 dv = imageLoad(data, ivec2(i, didx)).xy;
 		double qvd = join(qv);
 		double dvd = join(dv);
 		double diff = abs(qvd - dvd);
@@ -94,6 +96,7 @@ void main() {
 	double val = sqrt(sum);
 	vec2 val_vec = split(val);
 	vec4 pixel = vec4(val_vec.x, val_vec.y, 0, 0);
+	ivec2 coord = ivec2(gl_GlobalInvocationID.yx);
 	imageStore(dist, coord, pixel);
 }
 )";
@@ -111,6 +114,10 @@ py::array_t<py::ssize_t> knn(py::array_t<double, py::array::c_style> data,
   if (data_shape[1] != queries_shape[1])
     throw std::runtime_error(
         "data and query vectors have different dimensions");
+  if (data_shape[0] == 0)
+    throw std::runtime_error("empty data array");
+  if (queries_shape[0] == 0)
+    throw std::runtime_error("empty queries array");
 
   auto data_arr = data.mutable_unchecked<2>();
   auto queries_arr = queries.mutable_unchecked<2>();
@@ -142,7 +149,7 @@ py::array_t<py::ssize_t> knn(py::array_t<double, py::array::c_style> data,
 
   auto data_tex = vectors_to_texture(data_ptr, dim, data_cnt, data_loc);
   auto query_tex = vectors_to_texture(queries_ptr, dim, queries_cnt, query_loc);
-  auto dist_tex = make_texture(queries_cnt, data_cnt);
+  auto dist_tex = make_texture(data_cnt, queries_cnt);
   glBindImageTexture(dist_loc, dist_tex, 0, GL_FALSE, 0, GL_READ_WRITE,
                      GL_RG32F);
 
@@ -156,9 +163,32 @@ py::array_t<py::ssize_t> knn(py::array_t<double, py::array::c_style> data,
   join_double(data_ptr, data_size);
   join_double(queries_ptr, queries_size);
 
-  py::array_t<py::ssize_t> neighbours({queries_cnt, k});
+  py::array_t<py::ssize_t> neighbours(
+      {static_cast<py::ssize_t>(queries_cnt), static_cast<py::ssize_t>(k)});
+  for (py::ssize_t q = 0; q < queries_cnt; q++) {
+    py::ssize_t last_min_idx = -1;
+    double last_min = -1;
+    for (int kval = 0; kval < k; kval++) {
+      py::ssize_t min_idx = 0;
+      double min_dist = std::numeric_limits<double>().max();
+      for (py::ssize_t i = 0; i < data_cnt; i++) {
+        auto d = dist[q * data_cnt + i];
+        if (d < last_min)
+          continue;
+        if (d == last_min && i == last_min_idx)
+          continue;
+        if (d < min_dist) {
+          min_dist = d;
+          min_idx = i;
+        }
+      }
+      *neighbours.mutable_data(q, kval) = min_idx;
+      last_min = min_dist;
+      last_min_idx = min_idx;
+    }
+  }
 
-  return {};
+  return neighbours;
 }
 
 PYBIND11_MODULE(knngl, m) {
