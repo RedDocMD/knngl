@@ -73,6 +73,8 @@ GLuint createProgram(const std::vector<GLuint> &shaders) {
     throw std::runtime_error("program creation failed");
   }
 
+  for (auto shader : shaders)
+    glDetachShader(program, shader);
   return program;
 }
 
