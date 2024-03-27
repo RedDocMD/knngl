@@ -18,7 +18,7 @@ void handleGlError();
 
 class GlContext {
 public:
-  static std::optional<GlContext> init();
+  static std::optional<GlContext> init(bool es);
   ~GlContext();
   GlContext(const GlContext &) = delete;
   GlContext &operator=(const GlContext &) = delete;
@@ -48,7 +48,7 @@ private:
   EGLDisplay display_{};
 
   GlContext() = default;
-  int glInit();
+  int glInit(bool es);
 };
 
 class Shader {

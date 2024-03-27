@@ -129,7 +129,7 @@ void handleGlError() {
     throw std::runtime_error("OpenGl error");
 }
 
-int GlContext::glInit() {
+int GlContext::glInit(bool es) {
   display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
   if (!eglInitialize(display_, nullptr, nullptr)) {
     fprintf(stderr, "failed to egl initialize\n");
@@ -146,8 +146,9 @@ int GlContext::glInit() {
     return 1;
   }
 
+  auto config_bit = es ? EGL_OPENGL_ES_BIT : EGL_OPENGL_BIT;
   static std::array<EGLint, 3> config_attribs = {EGL_RENDERABLE_TYPE,
-                                                 EGL_OPENGL_BIT, EGL_NONE};
+                                                 config_bit, EGL_NONE};
   EGLConfig cfg;
   EGLint count;
 
@@ -155,13 +156,18 @@ int GlContext::glInit() {
     fprintf(stderr, "eglChooseConfig failed\n");
     return 1;
   }
-  if (!eglBindAPI(EGL_OPENGL_API)) {
+
+  auto api = es ? EGL_OPENGL_ES_API : EGL_OPENGL_API;
+  if (!eglBindAPI(api)) {
     fprintf(stderr, "eglBindAPI failed\n");
     return 1;
   }
 
-  static std::array<EGLint, 5> attribs = {
-      EGL_CONTEXT_MAJOR_VERSION, 4, EGL_CONTEXT_MINOR_VERSION, 3, EGL_NONE};
+  EGLint major = es ? 3 : 4;
+  EGLint minor = es ? 2 : 3;
+  static std::array<EGLint, 5> attribs = {EGL_CONTEXT_MAJOR_VERSION, major,
+                                          EGL_CONTEXT_MINOR_VERSION, minor,
+                                          EGL_NONE};
   context_ = eglCreateContext(display_, cfg, EGL_NO_CONTEXT, attribs.data());
   if (context_ == EGL_NO_CONTEXT) {
     fprintf(stderr, "failed to create egl context\n");
@@ -177,15 +183,18 @@ int GlContext::glInit() {
   // printf("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
 
   glewExperimental = GL_TRUE;
-  glewInit();
+  if (glewInit() != GLEW_OK) {
+    fprintf(stderr, "failed to glewInit\n");
+    return 1;
+  }
 
   init_ = true;
   return 0;
 }
 
-std::optional<GlContext> GlContext::init() {
+std::optional<GlContext> GlContext::init(bool es) {
   GlContext ctx;
-  if (ctx.glInit())
+  if (ctx.glInit(es))
     return {};
   return std::move(ctx);
 }
