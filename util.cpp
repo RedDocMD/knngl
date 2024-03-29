@@ -1,4 +1,5 @@
 #include "util.hpp"
+#include "GLFW/glfw3.h"
 #include <array>
 #include <fstream>
 #include <iostream>
@@ -130,65 +131,27 @@ void handleGlError() {
 }
 
 int GlContext::glInit(bool es) {
-  display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-  if (!eglInitialize(display_, nullptr, nullptr)) {
-    fprintf(stderr, "failed to egl initialize\n");
-    return 1;
-  }
-  std::string egl_extensions_st = eglQueryString(display_, EGL_EXTENSIONS);
-  if (egl_extensions_st.find("EGL_KHR_create_context") == std::string::npos) {
-    fprintf(stderr, "EGL_KHR_create_context not found\n");
-    return 1;
-  }
-  if (egl_extensions_st.find("EGL_KHR_surfaceless_context") ==
-      std::string::npos) {
-    fprintf(stderr, "EGL_KHR_surfaceless_context not found\n");
+  if (!glfwInit()) {
+    fprintf(stderr, "ERROR: could not start GLFW3\n");
     return 1;
   }
 
-  auto config_bit = es ? EGL_OPENGL_ES_BIT : EGL_OPENGL_BIT;
-  static std::array<EGLint, 3> config_attribs = {EGL_RENDERABLE_TYPE,
-                                                 config_bit, EGL_NONE};
-  EGLConfig cfg;
-  EGLint count;
-
-  if (!eglChooseConfig(display_, config_attribs.data(), &cfg, 1, &count)) {
-    fprintf(stderr, "eglChooseConfig failed\n");
+  glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+  GLFWwindow *window = glfwCreateWindow(1, 1, "", nullptr, nullptr);
+  if (!window) {
+    fprintf(stderr, "ERROR: could not open window with GLFW3\n");
+    glfwTerminate();
     return 1;
   }
+  glfwMakeContextCurrent(window);
 
-  auto api = es ? EGL_OPENGL_ES_API : EGL_OPENGL_API;
-  if (!eglBindAPI(api)) {
-    fprintf(stderr, "eglBindAPI failed\n");
-    return 1;
-  }
-
-  EGLint major = es ? 3 : 4;
-  EGLint minor = es ? 2 : 3;
-  static std::array<EGLint, 5> attribs = {EGL_CONTEXT_MAJOR_VERSION, major,
-                                          EGL_CONTEXT_MINOR_VERSION, minor,
-                                          EGL_NONE};
-  context_ = eglCreateContext(display_, cfg, EGL_NO_CONTEXT, attribs.data());
-  if (context_ == EGL_NO_CONTEXT) {
-    fprintf(stderr, "failed to create egl context\n");
-    return 1;
-  }
-
-  if (!eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, context_)) {
-    fprintf(stderr, "failed to make egl context current\n");
-    return 1;
-  }
-  // printf("OpenGL Version: %s\n", glGetString(GL_VERSION));
-  // printf("OpenGL Vendor: %s\n", glGetString(GL_VENDOR));
-  // printf("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
+  printf("OpenGL Version: %s\n", glGetString(GL_VERSION));
+  printf("OpenGL Vendor: %s\n", glGetString(GL_VENDOR));
+  printf("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
 
   glewExperimental = GL_TRUE;
-  if (glewInit() != GLEW_OK) {
-    fprintf(stderr, "failed to glewInit\n");
-    return 1;
-  }
+  glewInit();
 
-  init_ = true;
   return 0;
 }
 

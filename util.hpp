@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include <GL/gl.h>
+
 std::string readFile(const std::string &name);
 void printShaderInfoLog(GLuint shader_index);
 GLuint loadShader(const std::string &name, GLuint shader_type);
