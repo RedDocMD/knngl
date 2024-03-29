@@ -11,6 +11,6 @@ nn.fit(d)
 sn = nn.kneighbors(q, k, return_distance=False)
 print(sn)
 
-neigh = knngl.Knn(es=True)
+neigh = knngl.Knn(es=False)
 n = neigh.knn(d, q, k)
 print(n)
