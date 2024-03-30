@@ -200,8 +200,8 @@ static void
 nearest_neighbours_intern(const T *dist, py::array_t<py::ssize_t> &neighbours,
                           py::ssize_t queries_cnt, py::ssize_t data_cnt, int k,
                           size_t queries_off = 0) {
+  std::vector<ssize_t> indices(k);
   for (py::ssize_t q = 0; q < queries_cnt; q++) {
-    py::ssize_t last_min_idx = -1;
     T last_min = -1;
     for (int kval = 0; kval < k; kval++) {
       py::ssize_t min_idx = 0;
@@ -210,16 +210,25 @@ nearest_neighbours_intern(const T *dist, py::array_t<py::ssize_t> &neighbours,
         auto d = dist[q * data_cnt + i];
         if (d < last_min)
           continue;
-        if (d == last_min && i == last_min_idx)
-          continue;
+        if (d == last_min) {
+          bool is_identical = false;
+          for (int p = 0; p < kval; p++) {
+            if (indices[p] == i) {
+              is_identical = true;
+              break;
+            }
+          }
+          if (is_identical)
+            continue;
+        }
         if (d < min_dist) {
           min_dist = d;
           min_idx = i;
         }
       }
+      indices[kval] = min_idx;
       *neighbours.mutable_data(q + queries_off, kval) = min_idx;
       last_min = min_dist;
-      last_min_idx = min_idx;
     }
   }
 }
@@ -330,8 +339,9 @@ public:
     GLint queries_buf_loc = 1;
     GLint dist_buf_loc = 2;
 
-    GLint max_ssbo_bytes = 0;
-    glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &max_ssbo_bytes);
+    GLuint max_ssbo_bytes = 0;
+    glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE,
+                  reinterpret_cast<GLint *>(&max_ssbo_bytes));
 
     if (data_size * sizeof(double) > max_ssbo_bytes)
       throw std::runtime_error("cannot fit dataset in GPU memory");
