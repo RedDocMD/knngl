@@ -344,8 +344,8 @@ public:
     constexpr float query_cutoff = 0.9f;
     size_t max_query_cnt =
         query_cutoff * max_ssbo_bytes / (data_cnt * sizeof(double));
-    auto dist_ssbo = get_ssbo(
-        nullptr, data_cnt * max_query_cnt * sizeof(double), distBufferLoc);
+    auto dist_size = max_query_cnt * data_cnt * sizeof(double);
+    auto dist_ssbo = get_ssbo(nullptr, dist_size, distBufferLoc);
 
     auto queries_left = static_cast<size_t>(queries_cnt);
     size_t queries_off = 0;
@@ -354,8 +354,6 @@ public:
 
     while (queries_left > 0) {
       auto curr_query_cnt = std::min(max_query_cnt, queries_left);
-      auto dist_size = curr_query_cnt * data_cnt * sizeof(double);
-
       // std::cout << "Handling " << curr_query_cnt
       //           << " queries, starting from offset " << queries_off << "\n";
 
