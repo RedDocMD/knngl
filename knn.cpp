@@ -364,10 +364,6 @@ public:
     py::array_t<py::ssize_t> neighbours(
         {static_cast<py::ssize_t>(queries_cnt), static_cast<py::ssize_t>(k)});
 
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, dist_ssbo);
-    auto *dist = reinterpret_cast<float *>(glMapBufferRange(
-        GL_SHADER_STORAGE_BUFFER, 0, dist_size, GL_MAP_READ_BIT));
-
     while (queries_left > 0) {
       auto curr_query_cnt = std::min(max_query_cnt, queries_left);
       std::cout << "Handling " << curr_query_cnt
@@ -378,8 +374,13 @@ public:
       glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
       handleGlError();
 
+      std::cout << "Done computing" << std::endl;
+      glBindBuffer(GL_SHADER_STORAGE_BUFFER, dist_ssbo);
+      auto *dist = reinterpret_cast<float *>(glMapBufferRange(
+          GL_SHADER_STORAGE_BUFFER, 0, dist_size, GL_MAP_READ_BIT));
       nearest_neighbours_intern(dist, neighbours, curr_query_cnt, data_cnt, k,
                                 queries_off);
+      glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 
       queries_left -= curr_query_cnt;
       queries_off += curr_query_cnt;
@@ -388,7 +389,6 @@ public:
                 << " queries left" << std::endl;
     }
 
-    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     std::array<GLuint, 3> bufs{data_ssbo, queries_ssbo, dist_ssbo};
     glDeleteBuffers(bufs.size(), bufs.data());
     glUseProgram(0);
