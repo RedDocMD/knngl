@@ -16,3 +16,7 @@ print("KNNGL")
 neigh = knngl.Knn(es=False)
 n = neigh.knn(d, q, k)
 print(n)
+
+print("KNNGL with SSBO")
+n = neigh.knn_with_ssbo(d, q, k)
+print(n)

@@ -1,6 +1,7 @@
 import knngl
 from sklearn.neighbors import NearestNeighbors
 import pandas as pd
+import numpy as np
 
 data = pd.read_csv("../python/adult/adult.data", header=None)
 data.drop(data.columns[14], axis=1, inplace=True)
@@ -53,12 +54,16 @@ def label_to_numbers(data, columns, classes):
 data = label_to_numbers(data, columns, classes)
 queries = label_to_numbers(queries, columns, classes)
 
+np_data = data.values.astype(np.float64)
+np_queries = queries.values.astype(np.float64)
+
 k = 3
 
 nn = NearestNeighbors()
-nn.fit(data)
-sn = nn.kneighbors(queries, k, return_distance=False)
+nn.fit(np_data)
+sn = nn.kneighbors(np_queries, k, return_distance=False)
+print(sn)
 
 neigh = knngl.Knn(es=False)
-n = neigh.knn(data, queries, k)
-
+n = neigh.knn_with_ssbo(np_data, np_queries, k)
+print(n)
