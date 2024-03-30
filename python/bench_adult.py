@@ -57,6 +57,8 @@ queries = label_to_numbers(queries, columns, classes)
 np_data = data.values.astype(np.float64)
 np_queries = queries.values.astype(np.float64)
 
+np_queries = np_queries[:850, :]
+
 k = 3
 
 nn = NearestNeighbors()

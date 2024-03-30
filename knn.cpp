@@ -164,6 +164,7 @@ const std::string knn_ssbo = R"(
 
 uniform int dim;
 uniform int data_cnt;
+uniform int queries_off;
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
@@ -180,7 +181,7 @@ layout(std430, binding = 2) buffer outBuffer {
 } dist;
 
 void main() {
-	int query_idx = int(gl_GlobalInvocationID.x);
+	int query_idx = int(gl_GlobalInvocationID.x) + queries_off;
 	int data_idx = int(gl_GlobalInvocationID.y);
 	double sum = 0.0;
 	for (int i = 0; i < dim; i++) {
@@ -190,16 +191,16 @@ void main() {
 		sum += diff * diff;
 	}
 	double val = sqrt(sum);
-	dist.buf[query_idx * data_cnt + data_idx] = val;
+	dist.buf[(query_idx - queries_off) * data_cnt + data_idx] = val;
 }
 )";
 
 template <typename T>
-static void nearest_neighbours_intern(const T *dist,
-                                      py::array_t<py::ssize_t> &neighbours,
-                                      py::ssize_t queries_cnt,
-                                      py::ssize_t data_cnt, int k) {
-  for (py::ssize_t q = 0; q < queries_cnt; q++) {
+static void
+nearest_neighbours_intern(const T *dist, py::array_t<py::ssize_t> &neighbours,
+                          py::ssize_t queries_cnt, py::ssize_t data_cnt, int k,
+                          size_t queries_off = 0) {
+  for (py::ssize_t q = queries_off; q < queries_cnt + queries_off; q++) {
     py::ssize_t last_min_idx = -1;
     T last_min = -1;
     for (int kval = 0; kval < k; kval++) {
@@ -316,6 +317,7 @@ public:
 
     auto dim_loc = get_uniform_location(program, "dim");
     auto data_cnt_loc = get_uniform_location(program, "data_cnt");
+    auto queries_off_loc = get_uniform_location(program, "queries_off");
 
     auto data_cnt = data_shape[0];
     auto queries_cnt = queries_shape[0];
@@ -328,26 +330,55 @@ public:
     GLint queriesBufLoc = 1;
     GLint distBufferLoc = 2;
 
+    GLint max_ssbo_bytes = 0;
+    glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &max_ssbo_bytes);
+
+    if (data_size * sizeof(double) > max_ssbo_bytes)
+      throw std::runtime_error("cannot fit dataset in GPU memory");
     auto data_ssbo = get_ssbo(data_ptr, data_size * sizeof(double), dataBufLoc);
+
+    if (queries_size * sizeof(double) > max_ssbo_bytes)
+      throw std::runtime_error("cannot fit queries in GPU memory");
     auto queries_ssbo =
         get_ssbo(queries_ptr, queries_size * sizeof(double), queriesBufLoc);
-    auto dist_ssbo = get_ssbo(nullptr, data_cnt * queries_cnt * sizeof(double),
-                              distBufferLoc);
+    constexpr float query_cutoff = 0.9f;
+    size_t max_query_cnt =
+        query_cutoff * max_ssbo_bytes / (data_cnt * sizeof(double));
+    auto dist_ssbo = get_ssbo(
+        nullptr, data_cnt * max_query_cnt * sizeof(double), distBufferLoc);
 
-    glDispatchCompute(queries_cnt, data_cnt, 1);
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, dist_ssbo);
-    auto *dist = reinterpret_cast<double *>(glMapBufferRange(
-        GL_SHADER_STORAGE_BUFFER, 0, data_cnt * queries_cnt * sizeof(double),
-        GL_MAP_READ_BIT));
-    handleGlError();
-
+    auto queries_left = static_cast<size_t>(queries_cnt);
+    size_t queries_off = 0;
     py::array_t<py::ssize_t> neighbours(
         {static_cast<py::ssize_t>(queries_cnt), static_cast<py::ssize_t>(k)});
-    nearest_neighbours_intern(dist, neighbours, queries_cnt, data_cnt, k);
 
-    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    while (queries_left > 0) {
+      auto curr_query_cnt = std::min(max_query_cnt, queries_left);
+      auto dist_size = curr_query_cnt * data_cnt * sizeof(double);
+
+      // std::cout << "Handling " << curr_query_cnt
+      //           << " queries, starting from offset " << queries_off << "\n";
+
+      glUniform1i(queries_off_loc, queries_off);
+      glDispatchCompute(queries_cnt, data_cnt, 1);
+      glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+      glBindBuffer(GL_SHADER_STORAGE_BUFFER, dist_ssbo);
+      auto *dist = reinterpret_cast<double *>(glMapBufferRange(
+          GL_SHADER_STORAGE_BUFFER, 0, dist_size, GL_MAP_READ_BIT));
+      handleGlError();
+      nearest_neighbours_intern(dist, neighbours, curr_query_cnt, data_cnt, k,
+                                queries_off);
+      glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+
+      queries_left -= curr_query_cnt;
+      queries_off += curr_query_cnt;
+
+      // std::cout << "Handled " << curr_query_cnt << " queries, " <<
+      // queries_left
+      //           << " queries left" << std::endl;
+    }
+
     std::array<GLuint, 3> bufs{data_ssbo, queries_ssbo, dist_ssbo};
     glDeleteBuffers(bufs.size(), bufs.data());
     glUseProgram(0);
