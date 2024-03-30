@@ -23,3 +23,9 @@ target_compile_options(knngl PRIVATE
 	$<$<COMPILE_LANGUAGE:CXX>:-std=c++17>
 	$<$<COMPILE_LANGUAGE:C>:-std=c11>
 )
+
+configure_file(
+	${CMAKE_CURRENT_SOURCE_DIR}/python/test.py
+	${CMAKE_CURRENT_BINARY_DIR}/test.py
+	COPYONLY
+)
