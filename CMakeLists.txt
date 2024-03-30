@@ -29,3 +29,9 @@ configure_file(
 	${CMAKE_CURRENT_BINARY_DIR}/test.py
 	COPYONLY
 )
+
+configure_file(
+	${CMAKE_CURRENT_SOURCE_DIR}/python/bench_adult.py
+	${CMAKE_CURRENT_BINARY_DIR}/bench_adult.py
+	COPYONLY
+)
