@@ -130,11 +130,24 @@ void handleGlError() {
 }
 
 int GlContext::glInit(bool es) {
+  auto egl_version = gladLoaderLoadEGL(nullptr);
+  if (egl_version == 0) {
+    fprintf(stderr, "failed to load EGL\n");
+    return 1;
+  }
+
   display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
   if (!eglInitialize(display_, nullptr, nullptr)) {
     fprintf(stderr, "failed to egl initialize\n");
     return 1;
   }
+
+  egl_version = gladLoaderLoadEGL(display_);
+  if (egl_version == 0) {
+    fprintf(stderr, "failed to reload EGL\n");
+    return 1;
+  }
+
   std::string egl_extensions_st = eglQueryString(display_, EGL_EXTENSIONS);
   if (egl_extensions_st.find("EGL_KHR_create_context") == std::string::npos) {
     fprintf(stderr, "EGL_KHR_create_context not found\n");
@@ -178,15 +191,16 @@ int GlContext::glInit(bool es) {
     fprintf(stderr, "failed to make egl context current\n");
     return 1;
   }
+
+  auto version = gladLoaderLoadGL();
+  if (version == 0) {
+    fprintf(stderr, "faiedl to load GL\n");
+    return 1;
+  }
+
   // printf("OpenGL Version: %s\n", glGetString(GL_VERSION));
   // printf("OpenGL Vendor: %s\n", glGetString(GL_VENDOR));
   // printf("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
-
-  glewExperimental = GL_TRUE;
-  if (glewInit() != GLEW_OK) {
-    fprintf(stderr, "failed to glewInit\n");
-    return 1;
-  }
 
   init_ = true;
   return 0;

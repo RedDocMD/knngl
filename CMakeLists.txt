@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(knngl LANGUAGES CXX)
+project(knngl LANGUAGES C CXX)
 
 add_subdirectory(extern/pybind11)
 
@@ -9,7 +9,17 @@ find_package(GLEW REQUIRED)
 
 pybind11_add_module(knngl
 	knn.cpp
-	util.cpp)
+	util.cpp
+	glad/src/gl.c
+	glad/src/egl.c
+)
 
+target_include_directories(knngl PRIVATE glad/include)
 target_link_libraries(knngl PRIVATE OpenGL::GL OpenGL::EGL GLEW::GLEW)
-target_compile_options(knngl PRIVATE -Wall -pedantic -std=c++17)
+
+target_compile_options(knngl PRIVATE 
+	$<$<COMPILE_LANGUAGE:CXX,C>:-Wall>
+	$<$<COMPILE_LANGUAGE:CXX>:-pedantic>
+	$<$<COMPILE_LANGUAGE:CXX>:-std=c++17>
+	$<$<COMPILE_LANGUAGE:C>:-std=c11>
+)

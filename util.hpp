@@ -1,12 +1,12 @@
 #pragma once
 
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <GL/glew.h>
 #include <algorithm>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <glad/egl.h>
+#include <glad/gl.h>
 
 std::string readFile(const std::string &name);
 void printShaderInfoLog(GLuint shader_index);
