@@ -2,6 +2,7 @@ import knngl
 from sklearn.neighbors import NearestNeighbors
 import pandas as pd
 import numpy as np
+import sys
 
 data = pd.read_csv("../python/adult/adult.data", header=None)
 data.drop(data.columns[14], axis=1, inplace=True)
@@ -57,7 +58,7 @@ queries = label_to_numbers(queries, columns, classes)
 np_data = data.values.astype(np.float64)
 np_queries = queries.values.astype(np.float64)
 
-np_queries = np_queries[:850, :]
+# np_queries = np_queries[:3000, :]
 
 k = 3
 

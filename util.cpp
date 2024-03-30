@@ -217,8 +217,8 @@ GlContext::~GlContext() {
   if (init_) {
     gladLoaderUnloadGL();
     eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-    eglDestroyContext(display_, context_);
-    eglTerminate(display_);
+    // eglDestroyContext(display_, context_);
+    // eglTerminate(display_);
     gladLoaderUnloadEGL();
   }
 }
