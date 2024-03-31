@@ -58,7 +58,7 @@ queries = label_to_numbers(queries, columns, classes)
 np_data = data.values.astype(np.float64)
 np_queries = queries.values.astype(np.float64)
 
-# np_queries = np_queries[:3000, :]
+# np_queries = np_queries[:500, :]
 
 k = 3
 

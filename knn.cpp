@@ -66,11 +66,11 @@ get_uniform_location(GLint program, const std::string &name) {
   return loc;
 }
 
-static GLuint get_ssbo(void *data, size_t size, GLint bind_point) {
+static GLuint get_ssbo(void *data, size_t size, GLint bind_point, GLint flags) {
   GLuint ssbo;
   glGenBuffers(1, &ssbo);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, size, data, GL_DYNAMIC_DRAW);
+  glBufferStorage(GL_SHADER_STORAGE_BUFFER, size, data, flags);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bind_point, ssbo);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
   return ssbo;
@@ -195,6 +195,54 @@ void main() {
 }
 )";
 
+const std::string knn_sort = R"(
+#version 430
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+uniform int k;
+uniform int data_cnt;
+
+layout(std430, binding = 3) buffer outBuffer {
+  int buf[];
+} neigh;
+
+layout(std430, binding = 2) buffer inBuffer {
+  float buf[];
+} dist;
+
+void main() {
+  int query_idx = int(gl_GlobalInvocationID.x);  
+  float last_min = -1.0;
+  for (int kval = 0; kval < k; kval++) {
+    int min_idx = 0;
+    float min_dist = 1.0e38;
+    for (int i = 0; i < data_cnt; i++) {
+      float d = dist.buf[query_idx * data_cnt + i];
+      if (d < last_min)
+	continue;
+      if (d == last_min) {
+	bool is_identical = false;
+	for (int p = 0; p < kval; p++) {
+	  if (neigh.buf[query_idx * k + p] == i) {
+	    is_identical = true;
+	    break;
+	  }
+	}
+	if (is_identical)
+	  continue;
+      }
+      if (d < min_dist) {
+	min_dist = d;
+	min_idx = i;
+      }
+    }
+    neigh.buf[query_idx * k + kval] = min_idx;
+    last_min = min_dist;
+  }
+}
+)";
+
 template <typename T>
 static void
 nearest_neighbours_intern(const T *dist, py::array_t<py::ssize_t> &neighbours,
@@ -273,8 +321,13 @@ public:
     knn_ssbo_shaders.push_back(std::move(knn_ssbo_shader));
     auto knn_ssbo_prog = Program::fromShaders(knn_ssbo_shaders);
 
+    auto knn_sort_shader = Shader::fromData(knn_sort, GL_COMPUTE_SHADER);
+    std::vector<Shader> knn_sort_shaders;
+    knn_sort_shaders.push_back(std::move(knn_sort_shader));
+    auto knn_sort_prog = Program::fromShaders(knn_sort_shaders);
+
     return Knn(std::move(*ctx), std::move(knn_prog), std::move(knn_ssbo_prog),
-               es);
+               std::move(knn_sort_prog), es);
   }
 
   Knn(const Knn &) = delete;
@@ -282,7 +335,8 @@ public:
 
   Knn(Knn &&knn)
       : ctx_{std::move(knn.ctx_)}, knn_prog_{std::move(knn.knn_prog_)},
-        knn_ssbo_prog_{std::move(knn.knn_ssbo_prog_)}, es_{std::move(knn.es_)} {
+        knn_ssbo_prog_{std::move(knn.knn_ssbo_prog_)},
+        knn_sort_prog_{std::move(knn.knn_sort_prog_)}, es_{std::move(knn.es_)} {
   }
 
   Knn &operator=(Knn &&knn) {
@@ -291,6 +345,7 @@ public:
     ctx_ = std::move(knn.ctx_);
     knn_prog_ = std::move(knn.knn_prog_);
     knn_ssbo_prog_ = std::move(knn.knn_ssbo_prog_);
+    knn_sort_prog_ = std::move(knn.knn_sort_prog_);
     es_ = std::move(knn.es_);
     return *this;
   }
@@ -321,23 +376,14 @@ public:
     auto data_size = data_arr.size();
     auto queries_size = queries_arr.size();
 
-    auto program = knn_ssbo_prog_.program();
-    glUseProgram(program);
-
-    auto dim_loc = get_uniform_location(program, "dim");
-    auto data_cnt_loc = get_uniform_location(program, "data_cnt");
-    auto queries_off_loc = get_uniform_location(program, "queries_off");
-
     auto data_cnt = data_shape[0];
     auto queries_cnt = queries_shape[0];
     auto dim = data_shape[1];
 
-    glUniform1i(dim_loc, dim);
-    glUniform1i(data_cnt_loc, data_cnt);
-
-    GLint data_buf_loc = 0;
-    GLint queries_buf_loc = 1;
-    GLint dist_buf_loc = 2;
+    constexpr GLint data_buf_loc = 0;
+    constexpr GLint queries_buf_loc = 1;
+    constexpr GLint dist_buf_loc = 2;
+    constexpr GLint neigh_buf_loc = 3;
 
     GLuint max_ssbo_bytes = 0;
     glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE,
@@ -346,48 +392,101 @@ public:
     if (data_size * sizeof(double) > max_ssbo_bytes)
       throw std::runtime_error("cannot fit dataset in GPU memory");
     auto data_ssbo =
-        get_ssbo(data_ptr, data_size * sizeof(double), data_buf_loc);
+        get_ssbo(data_ptr, data_size * sizeof(double), data_buf_loc, 0);
 
     if (queries_size * sizeof(double) > max_ssbo_bytes)
       throw std::runtime_error("cannot fit queries in GPU memory");
-    auto queries_ssbo =
-        get_ssbo(queries_ptr, queries_size * sizeof(double), queries_buf_loc);
+    auto queries_ssbo = get_ssbo(queries_ptr, queries_size * sizeof(double),
+                                 queries_buf_loc, 0);
 
     constexpr float query_cutoff = 0.9f;
     size_t max_query_cnt =
         query_cutoff * max_ssbo_bytes / (data_cnt * sizeof(float));
     auto dist_size = max_query_cnt * data_cnt * sizeof(float);
-    auto dist_ssbo = get_ssbo(nullptr, dist_size, dist_buf_loc);
+    auto dist_ssbo =
+        get_ssbo(nullptr, dist_size, dist_buf_loc,
+                 GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+    auto neigh_ssbo =
+        get_ssbo(nullptr, max_query_cnt * k * sizeof(int), neigh_buf_loc,
+                 GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT);
+
+    auto program = knn_ssbo_prog_.program();
+    auto sort_program = knn_sort_prog_.program();
+
+    auto dim_loc = get_uniform_location(program, "dim");
+    auto data_cnt_loc = get_uniform_location(program, "data_cnt");
+    auto queries_off_loc = get_uniform_location(program, "queries_off");
+    auto k_loc = get_uniform_location(sort_program, "k");
+    auto sort_data_cnt_loc = get_uniform_location(sort_program, "data_cnt");
+
+    glUseProgram(program);
+    glUniform1i(dim_loc, dim);
+    glUniform1i(data_cnt_loc, data_cnt);
+
+    glUseProgram(sort_program);
+    glUniform1i(k_loc, k);
+    glUniform1i(sort_data_cnt_loc, data_cnt);
 
     auto queries_left = static_cast<size_t>(queries_cnt);
     size_t queries_off = 0;
     py::array_t<py::ssize_t> neighbours(
         {static_cast<py::ssize_t>(queries_cnt), static_cast<py::ssize_t>(k)});
+    // std::vector<int> neigh_tmp(max_query_cnt * k, -1);
+
+    // glBindBuffer(GL_SHADER_STORAGE_BUFFER, dist_ssbo);
+    // auto *dist = reinterpret_cast<float *>(glMapBufferRange(
+    //     GL_SHADER_STORAGE_BUFFER, 0, dist_size,
+    //     GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT));
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, neigh_ssbo);
+    auto *neigh_tmp = reinterpret_cast<int *>(glMapBufferRange(
+        GL_SHADER_STORAGE_BUFFER, 0, max_query_cnt * k * sizeof(int),
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT));
 
     while (queries_left > 0) {
       auto curr_query_cnt = std::min(max_query_cnt, queries_left);
-      std::cout << "Handling " << curr_query_cnt
-                << " queries, starting from offset " << queries_off << "\n";
+      // std::cout << "Handling " << curr_query_cnt
+      //           << " queries, starting from offset " << queries_off << "\n";
 
+      glUseProgram(program);
       glUniform1i(queries_off_loc, queries_off);
       glDispatchCompute(queries_cnt, data_cnt, 1);
-      glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+      // glFinish();
+      // glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT |
+      //                 GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
+      // glMemoryBarrier(GL_ALL_BARRIER_BITS);
+
+      // std::cout << "Done computing" << std::endl;
+      // nearest_neighbours_intern(dist, neighbours, curr_query_cnt, data_cnt,
+      // k,
+      //                           queries_off);
+
+      glUseProgram(sort_program);
+      glDispatchCompute(curr_query_cnt, 1, 1);
+      glFinish();
+      // glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
       handleGlError();
 
-      std::cout << "Done computing" << std::endl;
-      glBindBuffer(GL_SHADER_STORAGE_BUFFER, dist_ssbo);
-      auto *dist = reinterpret_cast<float *>(glMapBufferRange(
-          GL_SHADER_STORAGE_BUFFER, 0, dist_size, GL_MAP_READ_BIT));
-      nearest_neighbours_intern(dist, neighbours, curr_query_cnt, data_cnt, k,
-                                queries_off);
-      glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+      // std::cout << "Done sorting" << std::endl;
+      // glBindBuffer(GL_SHADER_STORAGE_BUFFER, neigh_ssbo);
+      // glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0,
+      //                    curr_query_cnt * k * sizeof(int), neigh_tmp.data());
+      for (size_t q = queries_off; q < queries_off + curr_query_cnt; q++) {
+        for (int kval = 0; kval < k; kval++) {
+          *neighbours.mutable_data(q, kval) =
+              neigh_tmp[(q - queries_off) * k + kval];
+        }
+      }
+      // glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
       queries_left -= curr_query_cnt;
       queries_off += curr_query_cnt;
 
-      std::cout << "Handled " << curr_query_cnt << " queries, " << queries_left
-                << " queries left" << std::endl;
+      // std::cout << "Handled " << curr_query_cnt << " queries, " <<
+      // queries_left
+      //           << " queries left" << std::endl;
     }
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     std::array<GLuint, 3> bufs{data_ssbo, queries_ssbo, dist_ssbo};
     glDeleteBuffers(bufs.size(), bufs.data());
@@ -468,13 +567,16 @@ public:
   }
 
 private:
-  Knn(GlContext ctx, Program knn_prog, Program knn_ssbo_prog, bool es)
+  Knn(GlContext ctx, Program knn_prog, Program knn_ssbo_prog,
+      Program knn_sort_prog, bool es)
       : ctx_{std::move(ctx)}, knn_prog_{std::move(knn_prog)},
-        knn_ssbo_prog_{std::move(knn_ssbo_prog)}, es_{es} {}
+        knn_ssbo_prog_{std::move(knn_ssbo_prog)},
+        knn_sort_prog_{std::move(knn_sort_prog)}, es_{es} {}
 
   GlContext ctx_;
   Program knn_prog_;
   Program knn_ssbo_prog_;
+  Program knn_sort_prog_;
   bool es_;
 };
 
