@@ -2,7 +2,9 @@ import knngl
 from sklearn.neighbors import NearestNeighbors
 import pandas as pd
 import numpy as np
-import sys
+import datetime as dt
+import timeit
+import csv
 
 data = pd.read_csv("../python/adult/adult.data", header=None)
 data.drop(data.columns[14], axis=1, inplace=True)
@@ -58,15 +60,26 @@ queries = label_to_numbers(queries, columns, classes)
 np_data = data.values.astype(np.float64)
 np_queries = queries.values.astype(np.float64)
 
-# np_queries = np_queries[:500, :]
 
-k = 3
+def measure_times(d, q, k):
+    nn = NearestNeighbors()
+    def sknn():
+        nn.fit(d)
+        nn.kneighbors(q, k, return_distance=False)
+    sktime = timeit.timeit(lambda: sknn(), number=5)
 
-nn = NearestNeighbors()
-nn.fit(np_data)
-sn = nn.kneighbors(np_queries, k, return_distance=False)
-print(sn)
+    neigh = knngl.Knn(es=False)
+    gltime = timeit.timeit(lambda: neigh.knn_with_ssbo(d, q, k), number=1)
 
-neigh = knngl.Knn(es=False)
-n = neigh.knn_with_ssbo(np_data, np_queries, k)
-print(n)
+    return sktime, gltime
+
+with open('../results/result_adult.csv', 'w') as csvfile:
+    reswriter = csv.writer(csvfile)
+    reswriter.writerow(['k', 'Query Count', 'Scikit', 'KnnGL'])
+    kvals = [1, 3, 5]
+    qvals = [20, 100, 500, 1000, 5000, 16000]
+    for k in kvals:
+        for qlen in qvals:
+            sk, gl = measure_times(np_data, np_queries[:qlen, :], k)
+            print(f"k = {k}, qlen = {qlen}, scikit = {sk} s, knngl = {gl} s")
+            reswriter.writerow([str(k), str(qlen), str(sk), str(gl)])
