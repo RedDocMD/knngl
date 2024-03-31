@@ -61,7 +61,12 @@ public:
     return Shader(loadShaderFromData(data, shader_type));
   }
 
-  ~Shader() { glDeleteShader(shader_); }
+  ~Shader() {
+    if (shader_ != 0) {
+      glDeleteShader(shader_);
+      shader_ = 0;
+    }
+  }
 
   Shader(const Shader &) = delete;
   Shader &operator=(const Shader &) = delete;
@@ -94,7 +99,12 @@ public:
     return Program(createProgram(shader_ids));
   }
 
-  ~Program() { glDeleteProgram(program_); }
+  ~Program() {
+    if (program_ != 0) {
+      glDeleteProgram(program_);
+      program_ = 0;
+    }
+  }
 
   Program(const Program &) = delete;
   Program &operator=(const Program &) = delete;

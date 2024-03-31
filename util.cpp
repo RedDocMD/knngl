@@ -220,5 +220,6 @@ GlContext::~GlContext() {
     // eglDestroyContext(display_, context_);
     // eglTerminate(display_);
     gladLoaderUnloadEGL();
+    init_ = false;
   }
 }

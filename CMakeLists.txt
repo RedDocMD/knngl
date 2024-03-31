@@ -41,3 +41,9 @@ configure_file(
 	${CMAKE_CURRENT_BINARY_DIR}/bench_adult_rpi.py
 	COPYONLY
 )
+
+configure_file(
+	${CMAKE_CURRENT_SOURCE_DIR}/python/bench_rtiot.py
+	${CMAKE_CURRENT_BINARY_DIR}/bench_rtiot.py
+	COPYONLY
+)

@@ -333,6 +333,8 @@ public:
   Knn(const Knn &) = delete;
   Knn &operator=(const Knn &) = delete;
 
+  void destroy() { this->~Knn(); }
+
   Knn(Knn &&knn)
       : ctx_{std::move(knn.ctx_)}, knn_prog_{std::move(knn.knn_prog_)},
         knn_ssbo_prog_{std::move(knn.knn_ssbo_prog_)},
@@ -431,12 +433,7 @@ public:
     size_t queries_off = 0;
     py::array_t<py::ssize_t> neighbours(
         {static_cast<py::ssize_t>(queries_cnt), static_cast<py::ssize_t>(k)});
-    // std::vector<int> neigh_tmp(max_query_cnt * k, -1);
 
-    // glBindBuffer(GL_SHADER_STORAGE_BUFFER, dist_ssbo);
-    // auto *dist = reinterpret_cast<float *>(glMapBufferRange(
-    //     GL_SHADER_STORAGE_BUFFER, 0, dist_size,
-    //     GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT));
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, neigh_ssbo);
     auto *neigh_tmp = reinterpret_cast<int *>(glMapBufferRange(
         GL_SHADER_STORAGE_BUFFER, 0, max_query_cnt * k * sizeof(int),
@@ -444,46 +441,25 @@ public:
 
     while (queries_left > 0) {
       auto curr_query_cnt = std::min(max_query_cnt, queries_left);
-      // std::cout << "Handling " << curr_query_cnt
-      //           << " queries, starting from offset " << queries_off << "\n";
 
       glUseProgram(program);
       glUniform1i(queries_off_loc, queries_off);
       glDispatchCompute(queries_cnt, data_cnt, 1);
-      // glFinish();
-      // glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT |
-      //                 GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
-      // glMemoryBarrier(GL_ALL_BARRIER_BITS);
-
-      // std::cout << "Done computing" << std::endl;
-      // nearest_neighbours_intern(dist, neighbours, curr_query_cnt, data_cnt,
-      // k,
-      //                           queries_off);
 
       glUseProgram(sort_program);
       glDispatchCompute(curr_query_cnt, 1, 1);
       glFinish();
-      // glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
       handleGlError();
 
-      // std::cout << "Done sorting" << std::endl;
-      // glBindBuffer(GL_SHADER_STORAGE_BUFFER, neigh_ssbo);
-      // glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0,
-      //                    curr_query_cnt * k * sizeof(int), neigh_tmp.data());
       for (size_t q = queries_off; q < queries_off + curr_query_cnt; q++) {
         for (int kval = 0; kval < k; kval++) {
           *neighbours.mutable_data(q, kval) =
               neigh_tmp[(q - queries_off) * k + kval];
         }
       }
-      // glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
       queries_left -= curr_query_cnt;
       queries_off += curr_query_cnt;
-
-      // std::cout << "Handled " << curr_query_cnt << " queries, " <<
-      // queries_left
-      //           << " queries left" << std::endl;
     }
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -586,5 +562,6 @@ PYBIND11_MODULE(knngl, m) {
   py::class_<Knn>(m, "Knn")
       .def(py::init(&Knn::create), py::kw_only(), py::arg("es"))
       .def("knn", &Knn::knn)
-      .def("knn_with_ssbo", &Knn::knn_with_ssbo);
+      .def("knn_with_ssbo", &Knn::knn_with_ssbo)
+      .def("destroy", &Knn::destroy);
 }
