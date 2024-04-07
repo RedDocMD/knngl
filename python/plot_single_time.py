@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 
 
 fname = sys.argv[1]
+suff = sys.argv[2]
+
 sizes = []
 times = []
 with open(fname) as f:
@@ -18,4 +20,4 @@ with open(fname) as f:
         times.append(time)
 
 plt.stem(sizes, times)
-plt.show()
+plt.savefig(f'../results/single_time_{suff}.png')
