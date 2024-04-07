@@ -10,6 +10,13 @@
 
 namespace py = pybind11;
 
+#define MEASURE_TIME 0
+
+#if MEASURE_TIME
+#include <chrono>
+namespace chrono = std::chrono;
+#endif
+
 static GLuint make_texture(GLuint width, GLuint height, bool es) {
   GLuint tex;
   glGenTextures(1, &tex);
@@ -444,7 +451,18 @@ public:
 
       glUseProgram(program);
       glUniform1i(queries_off_loc, queries_off);
+#if MEASURE_TIME
+      auto begin_time = chrono::steady_clock::now();
+#endif
       glDispatchCompute(queries_cnt, data_cnt, 1);
+#if MEASURE_TIME
+      glFinish();
+      auto end_time = chrono::steady_clock::now();
+      auto diff =
+          chrono::duration_cast<chrono::milliseconds>(end_time - begin_time)
+              .count();
+      std::cout << "Time = " << diff << std::endl;
+#endif
 
       glUseProgram(sort_program);
       glDispatchCompute(curr_query_cnt, 1, 1);

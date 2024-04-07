@@ -47,3 +47,9 @@ configure_file(
 	${CMAKE_CURRENT_BINARY_DIR}/bench_rtiot.py
 	COPYONLY
 )
+
+configure_file(
+	${CMAKE_CURRENT_SOURCE_DIR}/python/bench_single_time.py
+	${CMAKE_CURRENT_BINARY_DIR}/bench_single_time.py
+	COPYONLY
+)
