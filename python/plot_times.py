@@ -23,4 +23,5 @@ for k in kvals:
     ax.set_title(f'k = {k}')
     ax.set_xlabel('Query Count')
     ax.set_ylabel('Time (s)')
-    fig.savefig(f'../results/sk_vs_knngl_{k}.png')
+    ax.axline((5000, 0), (5000, gl.iloc[4]), linestyle='--', color='g')
+    fig.savefig(f'../results/sk_vs_knngl_{k}_line.png')
