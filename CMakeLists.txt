@@ -5,7 +5,6 @@ add_subdirectory(extern/pybind11)
 
 set(OpenGL_GL_PREFERENCE LEGACY)
 find_package(OpenGL REQUIRED)
-find_package(GLEW REQUIRED)
 
 pybind11_add_module(knngl
 	knn.cpp
@@ -15,7 +14,7 @@ pybind11_add_module(knngl
 )
 
 target_include_directories(knngl PRIVATE glad/include)
-target_link_libraries(knngl PRIVATE OpenGL::GL OpenGL::EGL GLEW::GLEW)
+target_link_libraries(knngl PRIVATE OpenGL::GL OpenGL::EGL)
 
 target_compile_options(knngl PRIVATE 
 	$<$<COMPILE_LANGUAGE:CXX,C>:-Wall>
@@ -39,18 +38,6 @@ configure_file(
 configure_file(
 	${CMAKE_CURRENT_SOURCE_DIR}/python/bench_adult_rpi.py
 	${CMAKE_CURRENT_BINARY_DIR}/bench_adult_rpi.py
-	COPYONLY
-)
-
-configure_file(
-	${CMAKE_CURRENT_SOURCE_DIR}/python/bench_rtiot.py
-	${CMAKE_CURRENT_BINARY_DIR}/bench_rtiot.py
-	COPYONLY
-)
-
-configure_file(
-	${CMAKE_CURRENT_SOURCE_DIR}/python/bench_single_time.py
-	${CMAKE_CURRENT_BINARY_DIR}/bench_single_time.py
 	COPYONLY
 )
 
