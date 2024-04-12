@@ -53,3 +53,9 @@ configure_file(
 	${CMAKE_CURRENT_BINARY_DIR}/bench_single_time.py
 	COPYONLY
 )
+
+configure_file(
+	${CMAKE_CURRENT_SOURCE_DIR}/python/test_adult.py
+	${CMAKE_CURRENT_BINARY_DIR}/test_adult.py
+	COPYONLY
+)
